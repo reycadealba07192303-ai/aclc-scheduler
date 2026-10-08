@@ -23,6 +23,10 @@ attendanceSessionSchema.index(
   { name: "one_active_session_per_class", unique: true, partialFilterExpression: { status: "active" } },
 );
 
+// History pages: a teacher's sessions by date, and one subject's sessions in a section.
+attendanceSessionSchema.index({ teacherId: 1, startedAt: -1 });
+attendanceSessionSchema.index({ sectionId: 1, subjectId: 1, startedAt: -1 });
+
 export type AttendanceSessionDoc = InferSchemaType<typeof attendanceSessionSchema>;
 const cachedAttendanceSession = models.AttendanceSession as Model<AttendanceSessionDoc> | undefined;
 if (process.env.NODE_ENV === "development" && cachedAttendanceSession && !cachedAttendanceSession.schema.path("scheduleId")) mongoose.deleteModel("AttendanceSession");

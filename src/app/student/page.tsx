@@ -7,6 +7,7 @@ import { DAY_LABELS, formatRange } from "@/shared/lib/time";
 import { CalendarDays, ChevronRight, Clock3, MapPin, Monitor, QrCode, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { startVisiblePolling } from "@/frontend/hooks/usePolling";
 
 type Portal = {
   student: { name: string; studentNumber?: string };
@@ -33,8 +34,9 @@ export default function StudentHomePage() {
       .then(async (response) => { const result = await response.json(); if (!response.ok) return; if (mounted) setActiveAttendance(result.sessions as ActiveAttendance[]); })
       .catch(() => undefined);
     void loadAttendance();
-    const poll = window.setInterval(() => void loadAttendance(), 5000);
-    return () => { mounted = false; window.clearInterval(poll); };
+    // Only shows a banner when attendance opens, so a slow check is enough.
+    const stop = startVisiblePolling(() => void loadAttendance(), 15_000);
+    return () => { mounted = false; stop(); };
   }, []);
 
   const classes = [...(data?.classes ?? [])].sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime));

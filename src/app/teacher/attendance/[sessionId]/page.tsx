@@ -7,6 +7,7 @@ import { ArrowLeft, CheckCircle2, Clock3, LoaderCircle, QrCode, UserCheck, XCirc
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { startVisiblePolling } from "@/frontend/hooks/usePolling";
 
 type SessionDetails = {
   session: { id: string; status: "active" | "closed"; startedAt: string; endedAt: string | null; section: string; subject: string; teacher: string };
@@ -41,8 +42,9 @@ export default function TeacherAttendanceSessionPage() {
       }
     };
     void refresh();
-    const poll = window.setInterval(() => { if (mounted) void refresh(); }, 3000);
-    return () => { mounted = false; window.clearInterval(poll); };
+    // Live check-in list: stays quick, but pauses while the tab is hidden.
+    const stop = startVisiblePolling(() => { if (mounted) void refresh(); }, 3000);
+    return () => { mounted = false; stop(); };
   }, [load]);
 
   async function closeSession() {

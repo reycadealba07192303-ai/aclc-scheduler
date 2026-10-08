@@ -1,9 +1,41 @@
 import { requireStudent } from "@/backend/auth/scope";
+import { memo } from "@/backend/cache/memo";
 import { connectDB } from "@/backend/database/db";
 import { AttendanceRecord, AttendanceSession, Program, Section, Student, Subject, Teacher } from "@/backend/models";
 import { findCurrentEnrollment } from "@/backend/services/student-enrollment";
 import { issueStudentAttendanceToken, QR_TOKEN_SECONDS, tokenExpiry } from "@/backend/services/attendance-qr";
 
+/** Names change rarely; cache them so polling students cost few database operations. */
+const LABEL_CACHE_MS = 5 * 60_000;
+
+const studentLabel = (studentId: string) => memo(`student-label:${studentId}`, LABEL_CACHE_MS, async () => {
+  const student = await Student.findById(studentId).select("name studentNumber").lean();
+  return { name: student?.name ?? "Student", studentNumber: student?.studentNumber ?? "" };
+});
+
+const sectionLabel = (sectionId: string) => memo(`section-label:${sectionId}`, LABEL_CACHE_MS, async () => {
+  const section = await Section.findById(sectionId).select("name programId").lean();
+  const program = section ? await Program.findById(section.programId).select("code").lean() : null;
+  return { name: section?.name ?? "Your section", program: program?.code ?? "" };
+});
+
+const sessionLabel = (session: { _id: unknown; subjectId: unknown; teacherId: unknown }) =>
+  memo(`session-label:${session._id}`, LABEL_CACHE_MS, async () => {
+    const [subject, teacher] = await Promise.all([
+      Subject.findById(session.subjectId).select("code name").lean(),
+      Teacher.findById(session.teacherId).select("firstName lastName").lean(),
+    ]);
+    return {
+      subject: subject ? { code: subject.code, name: subject.name } : { code: "", name: "Subject" },
+      teacher: teacher ? `${teacher.firstName} ${teacher.lastName}` : "Teacher",
+    };
+  });
+
+/**
+ * Open attendance for the signed-in student's section, each with a fresh
+ * personal QR (or their check-in once scanned). Polled by the student portal,
+ * so it is kept light: one query when nothing is open, two while it is.
+ */
 export async function GET() {
   const auth = await requireStudent();
   if (auth.response) return auth.response;
@@ -13,36 +45,38 @@ export async function GET() {
     const current = await findCurrentEnrollment(studentId);
     if (!current) return Response.json({ sessions: [] });
     const { term, enrollment } = current;
-    const activeSessions = await AttendanceSession.find({ sectionId: enrollment.sectionId, termId: term._id, status: "active" }).sort({ startedAt: -1 }).lean();
-    const [student, section, program, subjects, teachers, records] = await Promise.all([
-      Student.findById(studentId).select("name studentNumber").lean(),
-      Section.findById(enrollment.sectionId).select("name programId").lean(),
-      Section.findById(enrollment.sectionId).select("programId").lean().then((item) => item ? Program.findById(item.programId).select("code").lean() : null),
-      Subject.find({ _id: { $in: activeSessions.map((session) => session.subjectId) } }).select("code name").lean(),
-      Teacher.find({ _id: { $in: activeSessions.map((session) => session.teacherId) } }).select("firstName lastName").lean(),
+    const activeSessions = await AttendanceSession.find({ sectionId: enrollment.sectionId, termId: term._id, status: "active" })
+      .select("_id subjectId teacherId startedAt").sort({ startedAt: -1 }).lean();
+    if (!activeSessions.length) return Response.json({ sessions: [] });
+
+    const [student, section, labels, records] = await Promise.all([
+      studentLabel(studentId),
+      sectionLabel(String(enrollment.sectionId)),
+      Promise.all(activeSessions.map(sessionLabel)),
       AttendanceRecord.find({ studentId, sessionId: { $in: activeSessions.map((session) => session._id) } }).select("sessionId checkedInAt status").lean(),
     ]);
-    const subjectById = new Map(subjects.map((item) => [String(item._id), item]));
-    const teacherById = new Map(teachers.map((item) => [String(item._id), `${item.firstName} ${item.lastName}`]));
     const recordBySession = new Map(records.map((item) => [String(item.sessionId), item]));
     const qrNow = Date.now();
     return Response.json({
-      student: { name: student?.name ?? "Student", studentNumber: student?.studentNumber ?? "" },
-      section: { name: section?.name ?? "Your section", program: program?.code ?? "" },
-      sessions: activeSessions.map((session) => ({
-        id: String(session._id),
-        subject: subjectById.get(String(session.subjectId)) ?? { code: "", name: "Subject" },
-        teacher: teacherById.get(String(session.teacherId)) ?? "Teacher",
-        startedAt: session.startedAt,
-        checkedIn: recordBySession.has(String(session._id)),
-        checkedInAt: recordBySession.get(String(session._id))?.checkedInAt ?? null,
-        status: recordBySession.get(String(session._id))?.status ?? null,
-        qr: recordBySession.has(String(session._id)) ? null : {
-          value: issueStudentAttendanceToken(String(session._id), String(studentId), qrNow),
-          expiresAt: tokenExpiry(qrNow),
-          validForSeconds: QR_TOKEN_SECONDS,
-        },
-      })),
+      student,
+      section,
+      sessions: activeSessions.map((session, index) => {
+        const record = recordBySession.get(String(session._id));
+        return {
+          id: String(session._id),
+          subject: labels[index].subject,
+          teacher: labels[index].teacher,
+          startedAt: session.startedAt,
+          checkedIn: Boolean(record),
+          checkedInAt: record?.checkedInAt ?? null,
+          status: record?.status ?? null,
+          qr: record ? null : {
+            value: issueStudentAttendanceToken(String(session._id), String(studentId), qrNow),
+            expiresAt: tokenExpiry(qrNow),
+            validForSeconds: QR_TOKEN_SECONDS,
+          },
+        };
+      }),
     });
   } catch (error) {
     console.error("Student active attendance sessions load failed:", error);

@@ -4,6 +4,7 @@ import { cn } from "@/shared/lib/utils";
 import { Bell, CalendarDays, CheckCheck, ClipboardCheck, UserCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { startVisiblePolling } from "@/frontend/hooks/usePolling";
 
 export type AppNotification = {
   id: string;
@@ -37,8 +38,7 @@ export function useNotifications() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
-    const poll = window.setInterval(() => void refresh(), POLL_MS);
-    return () => window.clearInterval(poll);
+    return startVisiblePolling(() => void refresh(), POLL_MS);
   }, [refresh]);
 
   const markRead = useCallback(async (ids?: string[]) => {

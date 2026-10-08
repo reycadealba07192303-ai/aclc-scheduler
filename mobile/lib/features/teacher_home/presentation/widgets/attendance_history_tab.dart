@@ -9,6 +9,7 @@ import 'package:aclc_teacher_portal/features/attendance/presentation/widgets/att
 import 'package:aclc_teacher_portal/features/teacher_home/data/teacher_repository.dart';
 import 'package:aclc_teacher_portal/shared/utils/app_formatters.dart';
 import 'package:aclc_teacher_portal/shared/widgets/feedback_widgets.dart';
+import 'package:aclc_teacher_portal/shared/utils/foreground_poller.dart';
 
 /// The attendance sessions a teacher ran on a chosen day, with who checked in.
 class AttendanceHistoryTab extends StatefulWidget {
@@ -26,7 +27,7 @@ class _AttendanceHistoryTabState extends State<AttendanceHistoryTab> {
   List<Map<String, dynamic>> _sessions = [];
   var _loading = true;
   String? _error;
-  Timer? _poll;
+  ForegroundPoller? _poll;
   var _requestId = 0;
 
   bool get _isToday => DateUtils.isSameDay(_day, DateTime.now());
@@ -36,7 +37,7 @@ class _AttendanceHistoryTabState extends State<AttendanceHistoryTab> {
     super.initState();
     _load();
     // Keep today's live sessions and check-in counts current.
-    _poll = Timer.periodic(const Duration(seconds: 10), (_) {
+    _poll = ForegroundPoller(const Duration(seconds: 30), () {
       if (_isToday) _load(silent: true);
     });
   }
@@ -49,7 +50,7 @@ class _AttendanceHistoryTabState extends State<AttendanceHistoryTab> {
 
   @override
   void dispose() {
-    _poll?.cancel();
+    _poll?.dispose();
     super.dispose();
   }
 

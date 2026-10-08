@@ -9,6 +9,7 @@ import 'package:aclc_teacher_portal/features/attendance/presentation/widgets/cla
 import 'package:aclc_teacher_portal/features/teacher_home/data/teacher_repository.dart';
 import 'package:aclc_teacher_portal/shared/utils/app_formatters.dart';
 import 'package:aclc_teacher_portal/shared/widgets/feedback_widgets.dart';
+import 'package:aclc_teacher_portal/shared/utils/foreground_poller.dart';
 
 class AttendanceSessionPage extends StatefulWidget {
   const AttendanceSessionPage({
@@ -31,21 +32,22 @@ class _AttendanceSessionPageState extends State<AttendanceSessionPage> {
   var _closing = false;
   var _scanBusy = false;
   String? _lastScannedToken;
-  Timer? _poll;
+  ForegroundPoller? _poll;
 
   @override
   void initState() {
     super.initState();
     _load();
-    _poll = Timer.periodic(
+    // Live check-in list while scanning; paused when the app is in the background.
+    _poll = ForegroundPoller(
       const Duration(seconds: 3),
-      (_) => _load(silent: true),
+      () => _load(silent: true),
     );
   }
 
   @override
   void dispose() {
-    _poll?.cancel();
+    _poll?.dispose();
     super.dispose();
   }
 

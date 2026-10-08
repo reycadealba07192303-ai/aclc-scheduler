@@ -13,6 +13,7 @@ import 'package:aclc_teacher_portal/features/teacher_home/presentation/widgets/o
 import 'package:aclc_teacher_portal/features/teacher_home/presentation/widgets/profile_tab.dart';
 import 'package:aclc_teacher_portal/shared/utils/app_formatters.dart';
 import 'package:aclc_teacher_portal/shared/widgets/brand_mark.dart';
+import 'package:aclc_teacher_portal/shared/utils/foreground_poller.dart';
 
 class TeacherHomePage extends StatefulWidget {
   const TeacherHomePage({required this.onSignOut, super.key});
@@ -31,21 +32,22 @@ class _TeacherHomePageState extends State<TeacherHomePage> {
   var _historyRefreshTick = 0;
   var _unreadNotifications = 0;
   DateTime? _lastUnreadCheck;
-  Timer? _poll;
+  ForegroundPoller? _poll;
 
   @override
   void initState() {
     super.initState();
     _load();
-    _poll = Timer.periodic(
-      const Duration(seconds: 5),
-      (_) => _load(silent: true),
+    // The portal changes rarely (schedule changes also arrive as notifications).
+    _poll = ForegroundPoller(
+      const Duration(seconds: 60),
+      () => _load(silent: true),
     );
   }
 
   @override
   void dispose() {
-    _poll?.cancel();
+    _poll?.dispose();
     super.dispose();
   }
 

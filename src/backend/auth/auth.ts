@@ -5,7 +5,8 @@ import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:cry
 import { AuthAccount, Administrator, RevokedSession, Student, Teacher } from "@/backend/models";
 import { connectDB } from "@/backend/database/db";
 import { createSessionToken, readSessionToken, type AuthRole } from "@/backend/auth/auth-token";
-import { LIMITS, rateLimit } from "@/backend/services/rate-limit";
+import { LIMITS, rateLimitLocal } from "@/backend/services/rate-limit";
+import { forget, forgetTag, memo } from "@/backend/cache/memo";
 import type { AuthenticatedUser } from "@/shared/types";
 
 const COOKIE_NAME = "aclc_session";
@@ -77,17 +78,16 @@ export async function setSessionCookie(token: string) {
  * stops working immediately, even if someone copied it.
  */
 export async function revokeCurrentSession() {
-  const cookieStore = await cookies();
-  const authorization = (await headers()).get("authorization");
-  const token = authorization?.match(/^Bearer\s+(.+)$/i)?.[1] ?? cookieStore.get(COOKIE_NAME)?.value;
+  const token = await requestToken();
   const claims = await readSessionToken(token);
-  if (!claims?.sessionId || !claims.expiresAt) return;
+  if (!claims?.sessionId || !claims.expiresAt || !token) return;
   await connectDB();
   await RevokedSession.updateOne(
     { sessionId: claims.sessionId },
     { $setOnInsert: { sessionId: claims.sessionId, expiresAt: claims.expiresAt } },
     { upsert: true },
   );
+  forget(sessionCacheKey(claims, token));
 }
 
 export async function clearSessionCookie() {
@@ -95,52 +95,66 @@ export async function clearSessionCookie() {
   cookieStore.delete(COOKIE_NAME);
 }
 
-export async function getCurrentUser(): Promise<AuthUser | null> {
-  const cookieStore = await cookies();
-  const authorization = (await headers()).get("authorization");
-  const bearerToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
-  const claims = await readSessionToken(bearerToken ?? cookieStore.get(COOKIE_NAME)?.value);
-  if (!claims) return null;
-  await connectDB();
-  if (claims.sessionId && (await RevokedSession.exists({ sessionId: claims.sessionId }))) return null;
-  const account = await AuthAccount.findById(claims.accountId).select("email role authVersion administratorId teacherId studentId");
-  if (!account || account.role !== claims.role || account.authVersion !== claims.version) return null;
+/** How long a signed-in user lookup is reused on one server instance. */
+const SESSION_CACHE_MS = 15_000;
 
-  if (account.role === "admin" && account.administratorId) {
-    const admin = await Administrator.findOne({ _id: account.administratorId, status: "active" }).lean();
-    if (!admin) return null;
-    return {
-      id: String(account._id),
-      email: account.email,
-      role: "admin",
-      name: `${admin.firstName} ${admin.lastName}`,
-      administratorId: String(admin._id),
-    };
+async function requestToken() {
+  const authorization = (await headers()).get("authorization");
+  return authorization?.match(/^Bearer\s+(.+)$/i)?.[1] ?? (await cookies()).get(COOKIE_NAME)?.value;
+}
+
+const sessionCacheKey = (claims: { sessionId: string | null }, token: string) => `session:${claims.sessionId ?? token}`;
+
+/** Forgets cached sign-ins for an account, e.g. after its password changes. */
+export function forgetAccountSessions(accountId: string) {
+  forgetTag(`account:${accountId}`);
+}
+
+function findProfile(role: AuthRole, id: unknown) {
+  if (role === "admin") return Administrator.findOne({ _id: id, status: "active" }).lean();
+  if (role === "teacher") return Teacher.findOne({ _id: id, status: "active" }).lean();
+  return Student.findOne({ _id: id, status: "active" }).lean();
+}
+
+/**
+ * Who is signed in, from the session cookie (web) or bearer token (mobile).
+ * The account, the logout check, and the profile load in one parallel round
+ * trip, and the result is reused for 15 seconds on this server instance
+ * (logout and password changes clear it right away).
+ */
+export async function getCurrentUser(): Promise<AuthUser | null> {
+  const token = await requestToken();
+  const claims = await readSessionToken(token);
+  if (!claims || !token) return null;
+  return memo(sessionCacheKey(claims, token), SESSION_CACHE_MS, () => loadUser(claims), [`account:${claims.accountId}`]);
+}
+
+async function loadUser(claims: NonNullable<Awaited<ReturnType<typeof readSessionToken>>>): Promise<AuthUser | null> {
+  await connectDB();
+  const [revoked, account, earlyProfile] = await Promise.all([
+    claims.sessionId ? RevokedSession.exists({ sessionId: claims.sessionId }) : null,
+    AuthAccount.findById(claims.accountId).select("email role authVersion administratorId teacherId studentId").lean(),
+    claims.profileId ? findProfile(claims.role as AuthRole, claims.profileId) : null,
+  ]);
+  if (revoked || !account || account.role !== claims.role || account.authVersion !== claims.version) return null;
+  const linkedId = account.role === "admin" ? account.administratorId : account.role === "teacher" ? account.teacherId : account.studentId;
+  if (!linkedId) return null;
+  // Use the profile loaded in parallel only if it is still the one linked to the account.
+  const profile = earlyProfile && String(linkedId) === claims.profileId ? earlyProfile : await findProfile(account.role as AuthRole, linkedId);
+  if (!profile) return null;
+  const base = { id: String(account._id), email: account.email };
+
+  if (account.role === "admin") {
+    const admin = profile as { _id: unknown; firstName: string; lastName: string };
+    return { ...base, role: "admin", name: `${admin.firstName} ${admin.lastName}`, administratorId: String(admin._id) };
   }
-  if (account.role === "teacher" && account.teacherId) {
-    const teacher = await Teacher.findOne({ _id: account.teacherId, status: "active" }).lean();
-    if (!teacher) return null;
-    return {
-      id: String(account._id),
-      email: account.email,
-      role: "teacher",
-      name: `${teacher.firstName} ${teacher.lastName}`,
-      teacherId: String(teacher._id),
-    };
+  if (account.role === "teacher") {
+    const teacher = profile as { _id: unknown; firstName: string; lastName: string };
+    return { ...base, role: "teacher", name: `${teacher.firstName} ${teacher.lastName}`, teacherId: String(teacher._id) };
   }
-  if (account.role === "student" && account.studentId) {
-    const student = await Student.findOne({ _id: account.studentId, status: "active" }).lean();
-    if (!student || student.email !== account.email) return null;
-    return {
-      id: String(account._id),
-      email: account.email,
-      role: "student",
-      name: student.name,
-      studentId: String(student._id),
-      studentNumber: student.studentNumber,
-    };
-  }
-  return null;
+  const student = profile as { _id: unknown; name: string; studentNumber: string; email?: string | null };
+  if (student.email !== account.email) return null;
+  return { ...base, role: "student", name: student.name, studentId: String(student._id), studentNumber: student.studentNumber };
 }
 
 export async function requireRole(role: AuthRole) {
@@ -148,7 +162,7 @@ export async function requireRole(role: AuthRole) {
     const user = await getCurrentUser();
     if (!user) return { user: null, response: Response.json({ error: "Sign in to continue." }, { status: 401 }) };
     if (user.role !== role) return { user: null, response: Response.json({ error: "You do not have permission to do that." }, { status: 403 }) };
-    const limited = await rateLimit(LIMITS.api, user.id);
+    const limited = rateLimitLocal(LIMITS.api, user.id);
     if (limited) return { user: null, response: limited };
     return { user, response: null };
   } catch (error) {

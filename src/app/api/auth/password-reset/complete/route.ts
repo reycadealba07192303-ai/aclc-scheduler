@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { connectDB } from "@/backend/database/db";
-import { hashPassword } from "@/backend/auth/auth";
+import { forgetAccountSessions, hashPassword } from "@/backend/auth/auth";
 import { findActiveAccount } from "@/backend/auth/auth";
 import { AuthAccount, PasswordSetupToken } from "@/backend/models";
 import { clientIp, LIMITS, rateLimit } from "@/backend/services/rate-limit";
@@ -48,6 +48,7 @@ export async function POST(request: Request) {
     if (!consumed) return Response.json({ error: "The code is invalid or expired. Request a new verification code." }, { status: 400 });
 
     await AuthAccount.updateOne({ _id: found.account._id, email }, { $set: { passwordHash: await hashPassword(password) }, $inc: { authVersion: 1 } });
+    forgetAccountSessions(String(found.account._id));
     await audit({ id: String(found.account._id), role: found.account.role, name: email }, "account", "password.reset", `Password reset by email code for ${email}`, { type: "account", id: String(found.account._id) });
     return Response.json({ ok: true });
   } catch (error) {

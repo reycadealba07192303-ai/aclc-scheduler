@@ -14,6 +14,30 @@ export const LIMITS = {
   api: { name: "api", limit: 300, windowSeconds: 60 },
 } satisfies Record<string, LimitRule>;
 
+const localCounters = new Map<string, number>();
+
+/**
+ * Same fixed-window rule, counted in this server instance's memory: no database
+ * operation per request. Used for the general per-account API limit, where an
+ * approximate per-instance count is enough; sign-in and code limits stay shared.
+ */
+export function rateLimitLocal(rule: LimitRule, key: string): Response | null {
+  const windowMs = rule.windowSeconds * 1000;
+  const windowStart = Math.floor(Date.now() / windowMs) * windowMs;
+  const counterKey = `${rule.name}:${key}:${windowStart}`;
+  const count = (localCounters.get(counterKey) ?? 0) + 1;
+  localCounters.set(counterKey, count);
+  if (localCounters.size > 10_000) {
+    for (const old of localCounters.keys()) if (!old.endsWith(`:${windowStart}`)) localCounters.delete(old);
+  }
+  if (count <= rule.limit) return null;
+  const retryAfter = Math.max(1, Math.ceil((windowStart + windowMs - Date.now()) / 1000));
+  return Response.json(
+    { error: "Too many requests. Please slow down.", code: "rate_limited" },
+    { status: 429, headers: { "Retry-After": String(retryAfter) } },
+  );
+}
+
 /** The caller's IP as reported by the host's proxy (Vercel sets x-forwarded-for). */
 export function clientIp(headers: Headers) {
   return headers.get("x-forwarded-for")?.split(",")[0]?.trim() || headers.get("x-real-ip") || "unknown";

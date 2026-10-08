@@ -11,6 +11,7 @@ import 'package:aclc_teacher_portal/features/attendance/presentation/widgets/att
 import 'package:aclc_teacher_portal/features/teacher_home/data/teacher_repository.dart';
 import 'package:aclc_teacher_portal/shared/utils/app_formatters.dart';
 import 'package:aclc_teacher_portal/shared/widgets/feedback_widgets.dart';
+import 'package:aclc_teacher_portal/shared/utils/foreground_poller.dart';
 
 class SectionClassesPage extends StatefulWidget {
   const SectionClassesPage({
@@ -38,21 +39,21 @@ class _SectionClassesPageState extends State<SectionClassesPage> {
   var _loading = true;
   String? _error;
   String? _starting;
-  Timer? _poll;
+  ForegroundPoller? _poll;
 
   @override
   void initState() {
     super.initState();
     _load();
-    _poll = Timer.periodic(
-      const Duration(seconds: 5),
-      (_) => _load(silent: true),
+    _poll = ForegroundPoller(
+      const Duration(seconds: 15),
+      () => _load(silent: true),
     );
   }
 
   @override
   void dispose() {
-    _poll?.cancel();
+    _poll?.dispose();
     super.dispose();
   }
 

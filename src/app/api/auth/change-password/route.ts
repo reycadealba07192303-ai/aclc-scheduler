@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createSessionToken, getCurrentUser, hashPassword, setSessionCookie, verifyPassword } from "@/backend/auth/auth";
+import { createSessionToken, forgetAccountSessions, getCurrentUser, hashPassword, setSessionCookie, verifyPassword } from "@/backend/auth/auth";
 import { AuthAccount } from "@/backend/models";
 import { LIMITS, rateLimit } from "@/backend/services/rate-limit";
 import { audit } from "@/backend/services/audit";
@@ -35,6 +35,7 @@ export async function POST(request: Request) {
     account.passwordHash = await hashPassword(newPassword);
     account.authVersion += 1;
     await account.save();
+    forgetAccountSessions(user.id);
     await audit(user, "account", "password.change", `${user.name} changed their password`, { type: "account", id: user.id });
     const token = await createSessionToken(account);
     await setSessionCookie(token);

@@ -22,6 +22,9 @@ export async function connectDB() {
   cache.promise ??= mongoose.connect(uri, {
     bufferCommands: false,
     serverSelectionTimeoutMS: 5000,
+    // Each server instance keeps a small pool, so many Vercel instances stay
+    // well under the free Atlas tier's 500-connection limit.
+    maxPoolSize: 10,
   });
 
   try {

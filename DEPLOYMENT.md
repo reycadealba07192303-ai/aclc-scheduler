@@ -8,8 +8,8 @@ How to put the system online (web app and API on **Vercel**, data on **MongoDB A
 
 | Part | Where | Notes |
 | --- | --- | --- |
-| Web app + API | Vercel (Singapore region, set in `vercel.json`) | Deploys automatically from the `main` branch |
-| Database | MongoDB Atlas, database `aclc_scheduler` | Free tier (M0): no built-in backups |
+| Web app + API | Vercel, Hong Kong region `hkg1` (set in `vercel.json`) | Same AWS region as the Atlas cluster (`ap-east-1`), so database trips take about 2 ms; deploys automatically from `main` |
+| Database | MongoDB Atlas, database `aclc_scheduler`, Hong Kong (`AP_EAST_1`) | Free tier (M0): no built-in backups, about 100 operations per second |
 | Teacher app (Android) | GitHub Releases of this repository | Built and signed by the "Teacher app release" workflow |
 | Checks | GitHub Actions ("CI") | Lint, type check, tests, and build on every push and pull request |
 

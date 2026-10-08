@@ -9,6 +9,7 @@ import { ArrowLeft, CalendarDays, ChevronRight, Users } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { startVisiblePolling } from "@/frontend/hooks/usePolling";
 
 type ActiveSession = { id: string; scheduleId: string; sectionId: string; startedAt: string; attendanceCount: number };
 
@@ -30,8 +31,8 @@ export default function TeacherSectionPage() {
       .catch((cause: unknown) => { if (mounted) setError(cause instanceof Error ? cause.message : "Could not load attendance sessions."); })
       .finally(() => { if (mounted) setLoadingSessions(false); });
     void loadSessions();
-    const poll = window.setInterval(() => void loadSessions(), 5000);
-    return () => { mounted = false; window.clearInterval(poll); };
+    const stop = startVisiblePolling(() => void loadSessions(), 15_000);
+    return () => { mounted = false; stop(); };
   }, [sectionId]);
 
   if (!setupLoading && !section) return <div className="rounded-xl border border-line bg-bg-elevated p-8 text-center"><h1 className="font-semibold">Section not found in the active term</h1><Link href="/teacher" className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-accent"><ArrowLeft className="h-4 w-4" /> Back to handled sections</Link></div>;
