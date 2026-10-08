@@ -15,14 +15,15 @@ const changeSchema = z.object({
  * for the web and a `token` in the response for the mobile app.
  */
 export async function POST(request: Request) {
-  const parsed = changeSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return Response.json({ error: "Enter your current password and a new password of at least 12 characters." }, { status: 400 });
-  const { currentPassword, newPassword } = parsed.data;
   try {
+    // Who is asking comes first; signed-out callers learn nothing about the input rules.
     const user = await getCurrentUser();
     if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
     const limited = await rateLimit(LIMITS.changePassword, user.id);
     if (limited) return limited;
+    const parsed = changeSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return Response.json({ error: "Enter your current password and a new password of at least 12 characters." }, { status: 400 });
+    const { currentPassword, newPassword } = parsed.data;
     const account = await AuthAccount.findById(user.id).select("+passwordHash");
     if (!account) return Response.json({ error: "Sign in to continue." }, { status: 401 });
     if (!(await verifyPassword(currentPassword, account.passwordHash))) {

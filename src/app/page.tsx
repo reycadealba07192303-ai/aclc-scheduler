@@ -58,11 +58,20 @@ const faqs = [
   { q: "Can I see my attendance per subject?", a: "Yes. On the student portal, open My classes and select a subject to see every session, your attendance rate, and your present, late, and absent counts." },
 ];
 
-/** The Android teacher app, served from public/downloads. Null when the file isn't there. */
-const TEACHER_APK = "/downloads/aclc-scheduler-teacher.apk";
-function teacherApkSize() {
+/**
+ * Where the Android teacher app downloads from. In production, set
+ * TEACHER_APP_URL to the GitHub Release file (TEACHER_APP_VERSION and
+ * TEACHER_APP_SIZE label it). Locally, a file in public/downloads is used.
+ * Null (no button) when neither exists.
+ */
+const LOCAL_APK = "/downloads/aclc-scheduler-teacher.apk";
+function teacherApp() {
+  if (process.env.TEACHER_APP_URL) {
+    return { href: process.env.TEACHER_APP_URL, version: process.env.TEACHER_APP_VERSION ?? null, size: process.env.TEACHER_APP_SIZE ?? null };
+  }
   try {
-    return `${Math.round(statSync(path.join(process.cwd(), "public", TEACHER_APK)).size / 1024 / 1024)} MB`;
+    const size = statSync(path.join(process.cwd(), "public", LOCAL_APK)).size;
+    return { href: LOCAL_APK, version: null, size: `${Math.round(size / 1024 / 1024)} MB` };
   } catch {
     return null;
   }
@@ -89,7 +98,7 @@ function Logo({ size }: { size: number }) {
 }
 
 export default function LandingPage() {
-  const apkSize = teacherApkSize();
+  const app = teacherApp();
   return <div className="min-h-screen bg-bg-elevated text-ink">
     {/* Navigation */}
     <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-[#070d1f]/80 text-white backdrop-blur-md">
@@ -207,8 +216,8 @@ export default function LandingPage() {
               <span className="mt-1 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[#22c55e]/20 text-[#4ade80]"><Check className="h-3 w-3" strokeWidth={3} /></span>{item}
             </li>)}
           </ul>
-          {apkSize ? <div className="mt-10">
-            <a href={TEACHER_APK} download className="group inline-flex items-center gap-3 rounded-lg bg-white py-2.5 pl-2.5 pr-4 shadow-sm ring-1 ring-black/5 transition hover:bg-accent-soft">
+          {app ? <div className="mt-10">
+            <a href={app.href} download className="group inline-flex items-center gap-3 rounded-lg bg-white py-2.5 pl-2.5 pr-4 shadow-sm ring-1 ring-black/5 transition hover:bg-accent-soft">
               <span className="relative grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-md bg-accent text-white">
                 <AndroidIcon className="h-6 w-6" />
                 <span className="absolute inset-x-0 bottom-0 h-1 bg-brand" />
@@ -220,10 +229,10 @@ export default function LandingPage() {
               <Download className="ml-3 h-[18px] w-[18px] text-accent transition group-hover:translate-y-0.5" />
             </a>
             <div className="mt-4 flex flex-wrap gap-2 font-mono text-[11px] text-blue-100/70">
-              {["v0.1.0", `APK · ${apkSize}`, "Android 7.0 or later"].map((chip) => <span key={chip} className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1">{chip}</span>)}
+              {[app.version ? `v${app.version}` : null, app.size ? `APK · ${app.size}` : "APK", "Android 7.0 or later"].filter((chip): chip is string => Boolean(chip)).map((chip) => <span key={chip} className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1">{chip}</span>)}
             </div>
           </div> : null}
-          <p className="mt-6 max-w-xl text-sm leading-6 text-blue-100/55">{apkSize ? "When Android asks, allow installs from your browser. " : "Ask your school administrator for the app. "}Teachers sign in with the same email and password as the web portal.</p>
+          <p className="mt-6 max-w-xl text-sm leading-6 text-blue-100/55">{app ? "When Android asks, allow installs from your browser. " : "Ask your school administrator for the app. "}Teachers sign in with the same email and password as the web portal.</p>
         </div>
         <PhonePreview />
       </div>

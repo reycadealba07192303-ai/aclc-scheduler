@@ -1,0 +1,9 @@
+# Store text with LF line endings everywhere (stops the CRLF warnings on Windows).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.ttf binary
+*.pdf binary
+*.apk binary
+*.jks binary

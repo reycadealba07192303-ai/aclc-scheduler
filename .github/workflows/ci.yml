@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web app and API
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports: ["27017:27017"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: Tests (throwaway test database)
+        run: npm test
+        env:
+          TEST_MONGODB_URI: mongodb://localhost:27017/aclc_scheduler_test
+      - name: Production build
+        run: npm run build
+        env:
+          # Placeholders: the build doesn't connect to the database.
+          MONGODB_URI: mongodb://localhost:27017/aclc_scheduler_build
+          AUTH_SECRET: ci-placeholder-secret-that-is-at-least-32-bytes
+
+  mobile:
+    name: Teacher mobile app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.7
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test

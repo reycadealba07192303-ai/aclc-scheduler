@@ -10,11 +10,11 @@ const readSchema = z.union([
 
 /** Marks the user's own notifications read: `{ all: true }` or `{ ids: [...] }`. */
 export async function POST(request: Request) {
-  const parsed = readSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return Response.json({ error: "Choose notifications to mark as read." }, { status: 400 });
   try {
     const user = await getCurrentUser();
     if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
+    const parsed = readSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return Response.json({ error: "Choose notifications to mark as read." }, { status: 400 });
     const recipient = notificationRecipient(user);
     if (!recipient) return Response.json({ ok: true });
     await Notification.updateMany(
