@@ -3,6 +3,7 @@ import { z } from "zod";
 import { connectDB } from "@/backend/database/db";
 import { isSmtpConfigured, sendTeacherSetupCode } from "@/backend/mail/mailer";
 import { AuthAccount, PasswordSetupToken, Student, Teacher } from "@/backend/models";
+import { clientIp, LIMITS, rateLimit } from "@/backend/services/rate-limit";
 
 const requestSchema = z.object({
   identifier: z.string().trim().min(1).max(160),
@@ -25,6 +26,8 @@ function hashCode(email: string, code: string) {
 export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Enter a valid email or student ID, and the registered student email when needed." }, { status: 400 });
+  const limited = (await rateLimit(LIMITS.codeRequest, `ip:${clientIp(request.headers)}`)) ?? (await rateLimit(LIMITS.codeRequest, `id:${parsed.data.identifier}`));
+  if (limited) return limited;
   if (!isSmtpConfigured()) {
     return Response.json({ error: "Email verification is not configured yet. Please contact your administrator." }, { status: 503 });
   }

@@ -3,7 +3,8 @@ import { ClassSchedule } from "@/backend/models";
 import { connectDB } from "@/backend/database/db";
 import { saveScheduleDraft, ScheduleRequestError } from "@/backend/services/schedule-service";
 import { requireRole } from "@/backend/auth/auth";
-import { notifyScheduleChange } from "@/backend/services/notifications";
+import { describeClass, notifyScheduleChange } from "@/backend/services/notifications";
+import { audit } from "@/backend/services/audit";
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireRole("admin");
@@ -14,7 +15,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     await connectDB();
     const before = await ClassSchedule.findById(id).lean();
     const item = await saveScheduleDraft(await request.json(), id);
-    await notifyScheduleChange(before, await ClassSchedule.findById(id).lean());
+    const after = await ClassSchedule.findById(id).lean();
+    await notifyScheduleChange(before, after);
+    if (before && after) {
+      const [old, now] = await Promise.all([describeClass(before), describeClass(after)]);
+      await audit(auth.user, "schedule", "schedule.update", `Changed ${now.code} · ${now.section}: ${old.when} · ${old.where} → ${now.when} · ${now.where}`, { type: "class", id });
+    }
     return Response.json({ item });
   } catch (error) {
     if (error instanceof ScheduleRequestError) {
@@ -35,6 +41,8 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
     const item = await ClassSchedule.findByIdAndDelete(id);
     if (!item) return Response.json({ error: "Schedule slot was not found." }, { status: 404 });
     await notifyScheduleChange(item.toObject(), null);
+    const info = await describeClass(item.toObject());
+    await audit(auth.user, "schedule", "schedule.delete", `Removed ${info.code} · ${info.section} — ${info.when}`, { type: "class", id });
     return Response.json({ ok: true });
   } catch (error) {
     console.error("Schedule delete failed:", error);

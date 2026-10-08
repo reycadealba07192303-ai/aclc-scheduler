@@ -4,6 +4,7 @@ import { connectDB } from "@/backend/database/db";
 import { isSmtpConfigured, sendTeacherSetupCode } from "@/backend/mail/mailer";
 import { findActiveAccount } from "@/backend/auth/auth";
 import { PasswordSetupToken } from "@/backend/models";
+import { clientIp, LIMITS, rateLimit } from "@/backend/services/rate-limit";
 
 const requestSchema = z.object({ email: z.string().trim().email().max(160).transform((value) => value.toLowerCase()) });
 const CODE_LIFETIME_MS = 10 * 60 * 1000;
@@ -20,6 +21,8 @@ export async function POST(request: Request) {
   if (!parsed.success) return Response.json({ error: "Enter the email registered to your account." }, { status: 400 });
   if (!isSmtpConfigured()) return Response.json({ error: "Email verification is not configured yet. Please contact your administrator." }, { status: 503 });
   const { email } = parsed.data;
+  const limited = (await rateLimit(LIMITS.codeRequest, `ip:${clientIp(request.headers)}`)) ?? (await rateLimit(LIMITS.codeRequest, `email:${email}`));
+  if (limited) return limited;
 
   try {
     await connectDB();

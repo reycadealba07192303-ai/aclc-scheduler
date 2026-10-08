@@ -4,6 +4,8 @@ import { connectDB } from "@/backend/database/db";
 import { createSessionToken, hashPassword, setSessionCookie } from "@/backend/auth/auth";
 import { AuthAccount, PasswordSetupToken, Student, Teacher } from "@/backend/models";
 import { notifyAdmins } from "@/backend/services/notifications";
+import { clientIp, LIMITS, rateLimit } from "@/backend/services/rate-limit";
+import { audit } from "@/backend/services/audit";
 
 const setupSchema = z.object({
   email: z.string().trim().email().max(160).transform((value) => value.toLowerCase()),
@@ -22,6 +24,8 @@ export async function POST(request: Request) {
   const parsed = setupSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Enter your email, six-digit verification code, and a password of at least 12 characters." }, { status: 400 });
   const { email, code, password } = parsed.data;
+  const limited = await rateLimit(LIMITS.codeVerify, clientIp(request.headers));
+  if (limited) return limited;
 
   try {
     await connectDB();
@@ -77,6 +81,8 @@ export async function POST(request: Request) {
     await notifyAdmins(teacher
       ? { type: "account", title: `Teacher account activated`, body: `${teacher.firstName} ${teacher.lastName} (${teacher.employeeNumber}) set up their password.`, link: "/admin/users" }
       : { type: "account", title: `Student account activated`, body: `${student!.name} (${student!.studentNumber}) set up their password.`, link: "/admin/users" });
+    const who = teacher ? `${teacher.firstName} ${teacher.lastName}` : student!.name;
+    await audit({ id: String(account._id), role, name: who }, "account", "account.activate", `${who} set up their ${role} account`, { type: "account", id: String(account._id) });
     const session = await createSessionToken(account);
     await setSessionCookie(session);
     return Response.json({ ok: true, role }, { status: 201 });

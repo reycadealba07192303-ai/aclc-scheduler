@@ -56,9 +56,21 @@ class ApiClient {
     await _storage.write(key: 'teacher_access_token', value: token);
   }
 
+  /// Ends the session on the server (so the token can't be reused), then
+  /// forgets it on the phone. Signing out still works offline.
   Future<void> signOut() async {
+    final token = _token;
     _token = null;
     await _storage.delete(key: 'teacher_access_token');
+    if (token == null) return;
+    try {
+      await _client
+          .post(
+            Uri.parse('${AppConfig.apiBase}/api/auth/logout'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {}
   }
 
   Future<Map<String, dynamic>> get(String path) async {

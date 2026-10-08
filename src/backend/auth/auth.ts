@@ -2,9 +2,10 @@ import "server-only";
 
 import { cookies, headers } from "next/headers";
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
-import { AuthAccount, Administrator, Student, Teacher } from "@/backend/models";
+import { AuthAccount, Administrator, RevokedSession, Student, Teacher } from "@/backend/models";
 import { connectDB } from "@/backend/database/db";
 import { createSessionToken, readSessionToken, type AuthRole } from "@/backend/auth/auth-token";
+import { LIMITS, rateLimit } from "@/backend/services/rate-limit";
 import type { AuthenticatedUser } from "@/shared/types";
 
 const COOKIE_NAME = "aclc_session";
@@ -71,6 +72,24 @@ export async function setSessionCookie(token: string) {
   });
 }
 
+/**
+ * Ends the current session: the token (web cookie or mobile bearer token)
+ * stops working immediately, even if someone copied it.
+ */
+export async function revokeCurrentSession() {
+  const cookieStore = await cookies();
+  const authorization = (await headers()).get("authorization");
+  const token = authorization?.match(/^Bearer\s+(.+)$/i)?.[1] ?? cookieStore.get(COOKIE_NAME)?.value;
+  const claims = await readSessionToken(token);
+  if (!claims?.sessionId || !claims.expiresAt) return;
+  await connectDB();
+  await RevokedSession.updateOne(
+    { sessionId: claims.sessionId },
+    { $setOnInsert: { sessionId: claims.sessionId, expiresAt: claims.expiresAt } },
+    { upsert: true },
+  );
+}
+
 export async function clearSessionCookie() {
   const cookieStore = await cookies();
   cookieStore.delete(COOKIE_NAME);
@@ -83,6 +102,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
   const claims = await readSessionToken(bearerToken ?? cookieStore.get(COOKIE_NAME)?.value);
   if (!claims) return null;
   await connectDB();
+  if (claims.sessionId && (await RevokedSession.exists({ sessionId: claims.sessionId }))) return null;
   const account = await AuthAccount.findById(claims.accountId).select("email role authVersion administratorId teacherId studentId");
   if (!account || account.role !== claims.role || account.authVersion !== claims.version) return null;
 
@@ -128,6 +148,8 @@ export async function requireRole(role: AuthRole) {
     const user = await getCurrentUser();
     if (!user) return { user: null, response: Response.json({ error: "Sign in to continue." }, { status: 401 }) };
     if (user.role !== role) return { user: null, response: Response.json({ error: "You do not have permission to do that." }, { status: 403 }) };
+    const limited = await rateLimit(LIMITS.api, user.id);
+    if (limited) return { user: null, response: limited };
     return { user, response: null };
   } catch (error) {
     console.error("Authentication check failed:", error);

@@ -1,20 +1,20 @@
 import { z } from "zod";
-import { requireRole } from "@/backend/auth/auth";
+import { requireTeacher } from "@/backend/auth/scope";
 import { connectDB } from "@/backend/database/db";
 import { AttendanceRecord, AttendanceSession, ClassSchedule, Section, Subject, Teacher } from "@/backend/models";
 import { notifySectionStudents } from "@/backend/services/notifications";
 import { attendanceWindow } from "@/backend/services/attendance-status";
+import { audit } from "@/backend/services/audit";
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i);
 const createSchema = z.object({ scheduleId: objectId });
 
 export async function GET(request: Request) {
-  const auth = await requireRole("teacher");
+  const auth = await requireTeacher();
   if (auth.response) return auth.response;
   try {
     await connectDB();
-    const teacherId = auth.user.teacherId;
-    if (!teacherId) return Response.json({ error: "This account is not linked to a teacher profile." }, { status: 403 });
+    const { teacherId } = auth;
     const sectionId = new URL(request.url).searchParams.get("sectionId");
     if (sectionId && !objectId.safeParse(sectionId).success) return Response.json({ error: "Invalid section ID." }, { status: 400 });
     const filter: Record<string, unknown> = { teacherId, status: "active" };
@@ -44,14 +44,13 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireRole("teacher");
+  const auth = await requireTeacher();
   if (auth.response) return auth.response;
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Choose one of your scheduled classes." }, { status: 400 });
   try {
     await connectDB();
-    const teacherId = auth.user.teacherId;
-    if (!teacherId) return Response.json({ error: "This account is not linked to a teacher profile." }, { status: 403 });
+    const { teacherId } = auth;
     const schedule = await ClassSchedule.findOne({ _id: parsed.data.scheduleId, teacherId }).lean();
     if (!schedule) return Response.json({ error: "This class is not assigned to your teacher account." }, { status: 404 });
     const section = await Section.findById(schedule.sectionId).select("_id termId").lean();
@@ -73,6 +72,7 @@ export async function POST(request: Request) {
           startedAt: new Date(),
         });
         const subject = await Subject.findById(schedule.subjectId).select("code name").lean();
+        await audit(auth.user, "attendance", "attendance.open", `Opened attendance for ${subject?.code ?? "a class"}`, { type: "attendanceSession", id: String(session._id) });
         await notifySectionStudents(schedule.sectionId, schedule.termId, {
           type: "attendance",
           title: `Attendance is open: ${subject?.code ?? "your class"}`,

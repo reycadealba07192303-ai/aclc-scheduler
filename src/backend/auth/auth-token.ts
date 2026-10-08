@@ -19,6 +19,7 @@ export async function createSessionToken(account: {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer("aclc-scheduler")
     .setSubject(String(account._id))
+    .setJti(crypto.randomUUID())
     .setIssuedAt()
     .setExpirationTime(`${SESSION_SECONDS}s`)
     .sign(secretKey());
@@ -33,7 +34,14 @@ export async function readSessionToken(token?: string) {
       (payload.role !== "admin" && payload.role !== "teacher" && payload.role !== "student") ||
       typeof payload.version !== "number"
     ) return null;
-    return { accountId: payload.sub, role: payload.role, version: payload.version };
+    return {
+      accountId: payload.sub,
+      role: payload.role,
+      version: payload.version,
+      // Tokens issued before logout revocation have no ID; they simply expire.
+      sessionId: typeof payload.jti === "string" ? payload.jti : null,
+      expiresAt: typeof payload.exp === "number" ? new Date(payload.exp * 1000) : null,
+    };
   } catch {
     return null;
   }

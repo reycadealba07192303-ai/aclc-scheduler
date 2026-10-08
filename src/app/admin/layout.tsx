@@ -5,6 +5,7 @@ import { useAcademicStore } from "@/frontend/context/AcademicStore";
 import {
   CalendarDays,
   GraduationCap,
+  History,
   LayoutDashboard,
   Settings2,
   UserRound,
@@ -17,6 +18,7 @@ const nav: NavItem[] = [
   { href: "/admin/schedule", label: "Schedule", icon: CalendarDays },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/setup", label: "Setup", icon: Settings2 },
+  { href: "/admin/activity", label: "Activity log", icon: History },
   { href: "/admin/profile", label: "Profile", icon: UserRound },
 ];
 

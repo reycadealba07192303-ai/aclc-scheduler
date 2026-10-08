@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireRole } from "@/backend/auth/auth";
+import { requireTeacher } from "@/backend/auth/scope";
 import { connectDB } from "@/backend/database/db";
 import { AttendanceRecord, AttendanceSession, ClassSchedule, Section, Student, StudentEnrollment, Subject, Teacher } from "@/backend/models";
 import { lateCutoffMinutes, minutesLabel } from "@/backend/services/attendance-status";
@@ -12,13 +12,13 @@ const idSchema = z.string().regex(/^[a-f\d]{24}$/i);
  * check-in list, including anyone checked in who has since left the roster.
  */
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
-  const auth = await requireRole("teacher");
+  const auth = await requireTeacher();
   if (auth.response) return auth.response;
   const { id } = await context.params;
   if (!idSchema.safeParse(id).success) return Response.json({ error: "Invalid attendance session ID." }, { status: 400 });
   try {
     await connectDB();
-    const session = await AttendanceSession.findOne({ _id: id, teacherId: auth.user.teacherId }).lean();
+    const session = await AttendanceSession.findOne({ _id: id, ...auth.scope }).lean();
     if (!session) return Response.json({ error: "Attendance session not found." }, { status: 404 });
     const [section, subject, teacher, schedule, records, enrollments] = await Promise.all([
       Section.findById(session.sectionId).select("name").lean(),

@@ -2,7 +2,8 @@ import { ClassSchedule } from "@/backend/models";
 import { connectDB } from "@/backend/database/db";
 import { saveScheduleDraft, ScheduleRequestError, serializeSchedule } from "@/backend/services/schedule-service";
 import { requireRole } from "@/backend/auth/auth";
-import { notifyScheduleChange } from "@/backend/services/notifications";
+import { describeClass, notifyScheduleChange } from "@/backend/services/notifications";
+import { audit } from "@/backend/services/audit";
 
 export async function GET() {
   const auth = await requireRole("admin");
@@ -25,7 +26,12 @@ export async function POST(request: Request) {
   try {
     await connectDB();
     const item = await saveScheduleDraft(await request.json());
-    await notifyScheduleChange(null, await ClassSchedule.findById(item.id).lean());
+    const saved = await ClassSchedule.findById(item.id).lean();
+    await notifyScheduleChange(null, saved);
+    if (saved) {
+      const info = await describeClass(saved);
+      await audit(auth.user, "schedule", "schedule.create", `Added ${info.code} · ${info.section} — ${info.when} · ${info.where}`, { type: "class", id: item.id });
+    }
     return Response.json({ item }, { status: 201 });
   } catch (error) {
     if (error instanceof ScheduleRequestError) {

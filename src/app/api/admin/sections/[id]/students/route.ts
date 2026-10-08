@@ -2,6 +2,7 @@ import { requireRole } from "@/backend/auth/auth";
 import { connectDB } from "@/backend/database/db";
 import { Section, Student, StudentEnrollment } from "@/backend/models";
 import { z } from "zod";
+import { audit } from "@/backend/services/audit";
 
 const idSchema = z.string().regex(/^[a-f\d]{24}$/i);
 const importSchema = z.object({
@@ -28,7 +29,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 
   try {
     await connectDB();
-    const section = await Section.findById(id).select("_id termId").lean();
+    const section = await Section.findById(id).select("_id termId name").lean();
     if (!section) return Response.json({ error: "Section not found." }, { status: 404 });
     const enrollments = await StudentEnrollment.find({ sectionId: section._id, termId: section.termId }).select("studentId").lean();
     const students = await Student.find({ _id: { $in: enrollments.map((item) => item.studentId) } }).sort({ studentNumber: 1 }).lean();
@@ -87,6 +88,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       };
     });
     const enrollmentResult = await StudentEnrollment.bulkWrite(enrollmentOperations);
+    await audit(auth.user, "roster", "roster.import", `Imported ${parsed.data.students.length} students into ${section.name} (${enrollmentResult.upsertedCount} new)`, { type: "section", id });
 
     return Response.json({
       ok: true,

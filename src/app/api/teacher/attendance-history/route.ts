@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireRole } from "@/backend/auth/auth";
+import { requireTeacher } from "@/backend/auth/scope";
 import { connectDB } from "@/backend/database/db";
 import { AttendanceRecord, AttendanceSession, Section, Student, StudentEnrollment, Subject, Term } from "@/backend/models";
 
@@ -19,7 +19,7 @@ const subjectSchema = z.object({ sectionId: objectId, subjectId: objectId });
  * teacher's device time zone.
  */
 export async function GET(request: Request) {
-  const auth = await requireRole("teacher");
+  const auth = await requireTeacher();
   if (auth.response) return auth.response;
   const params = new URL(request.url).searchParams;
   let filter: Record<string, unknown>;
@@ -36,8 +36,7 @@ export async function GET(request: Request) {
   }
   try {
     await connectDB();
-    const teacherId = auth.user.teacherId;
-    if (!teacherId) return Response.json({ error: "This account is not linked to a teacher profile." }, { status: 403 });
+    const { teacherId } = auth;
     const sessions = await AttendanceSession.find({ ...filter, teacherId })
       .sort({ startedAt: -1 })
       .limit(SUBJECT_HISTORY_LIMIT)

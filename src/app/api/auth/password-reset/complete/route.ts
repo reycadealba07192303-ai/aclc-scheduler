@@ -4,6 +4,8 @@ import { connectDB } from "@/backend/database/db";
 import { hashPassword } from "@/backend/auth/auth";
 import { findActiveAccount } from "@/backend/auth/auth";
 import { AuthAccount, PasswordSetupToken } from "@/backend/models";
+import { clientIp, LIMITS, rateLimit } from "@/backend/services/rate-limit";
+import { audit } from "@/backend/services/audit";
 
 const resetSchema = z.object({
   email: z.string().trim().email().max(160).transform((value) => value.toLowerCase()),
@@ -22,6 +24,8 @@ export async function POST(request: Request) {
   const parsed = resetSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Enter your email, six-digit code, and a password of at least 12 characters." }, { status: 400 });
   const { email, code, password } = parsed.data;
+  const limited = await rateLimit(LIMITS.codeVerify, clientIp(request.headers));
+  if (limited) return limited;
 
   try {
     await connectDB();
@@ -44,6 +48,7 @@ export async function POST(request: Request) {
     if (!consumed) return Response.json({ error: "The code is invalid or expired. Request a new verification code." }, { status: 400 });
 
     await AuthAccount.updateOne({ _id: found.account._id, email }, { $set: { passwordHash: await hashPassword(password) }, $inc: { authVersion: 1 } });
+    await audit({ id: String(found.account._id), role: found.account.role, name: email }, "account", "password.reset", `Password reset by email code for ${email}`, { type: "account", id: String(found.account._id) });
     return Response.json({ ok: true });
   } catch (error) {
     console.error("Password reset failed:", error);

@@ -1,16 +1,19 @@
 import { z } from "zod";
-import { requireRole } from "@/backend/auth/auth";
+import { requireTeacher } from "@/backend/auth/scope";
 import { connectDB } from "@/backend/database/db";
 import { AttendanceRecord, AttendanceSession, ClassSchedule, Student, StudentEnrollment, Subject } from "@/backend/models";
 import { notify } from "@/backend/services/notifications";
 import { checkInStatus } from "@/backend/services/attendance-status";
 import { verifyStudentAttendanceToken } from "@/backend/services/attendance-qr";
+import { clientIp, LIMITS, rateLimit } from "@/backend/services/rate-limit";
 
 const checkInSchema = z.object({ token: z.string().min(1).max(512) });
 
 export async function POST(request: Request) {
-  const auth = await requireRole("teacher");
+  const auth = await requireTeacher();
   if (auth.response) return auth.response;
+  const limited = await rateLimit(LIMITS.attendanceWrite, auth.user.id);
+  if (limited) return limited;
   const parsed = checkInSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Scan a student's current attendance QR." }, { status: 400 });
   const payload = verifyStudentAttendanceToken(parsed.data.token);
@@ -18,8 +21,7 @@ export async function POST(request: Request) {
 
   try {
     await connectDB();
-    const teacherId = auth.user.teacherId;
-    if (!teacherId) return Response.json({ error: "This account is not linked to a teacher profile." }, { status: 403 });
+    const { teacherId } = auth;
     const [student, session] = await Promise.all([
       Student.findOne({ _id: payload.studentId, status: { $ne: "inactive" } }).select("_id studentNumber name").lean(),
       AttendanceSession.findOne({ _id: payload.sessionId, teacherId, status: "active" }).lean(),

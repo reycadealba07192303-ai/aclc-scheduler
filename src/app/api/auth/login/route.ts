@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createSessionToken, findActiveAccount, findActiveStudentAccount, setSessionCookie, verifyPassword } from "@/backend/auth/auth";
+import { clientIp, LIMITS, rateLimit } from "@/backend/services/rate-limit";
 
 const teacherLoginSchema = z.object({
   identifier: z.string().trim().min(1).max(160),
@@ -12,6 +13,9 @@ export async function POST(request: Request) {
   const parsed = teacherLoginSchema.safeParse(body);
   if (!parsed.success) return Response.json({ error: "Enter your email or student ID and password." }, { status: 400 });
   const { identifier, password, client } = parsed.data;
+  const ip = clientIp(request.headers);
+  const limited = (await rateLimit(LIMITS.loginPerIp, ip)) ?? (await rateLimit(LIMITS.login, `${ip}:${identifier}`));
+  if (limited) return limited;
   const isEmail = z.string().email().safeParse(identifier).success;
   try {
     const found = isEmail

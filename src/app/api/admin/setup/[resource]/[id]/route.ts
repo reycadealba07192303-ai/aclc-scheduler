@@ -6,6 +6,7 @@ import { administratorInputSchema, teacherInputSchema } from "@/backend/validati
 import { setLoginCredentials } from "@/backend/auth/auth";
 import { z } from "zod";
 import { requireRole } from "@/backend/auth/auth";
+import { auditSetupChange, setupItemLabel } from "@/backend/services/audit";
 
 function serialize(document: { toObject(): object }) {
   const fields = { ...(document.toObject() as Record<string, unknown>) };
@@ -21,7 +22,7 @@ function duplicateError(error: unknown) {
 
 const passwordSchema = z.string().min(12).max(200);
 
-export async function PATCH(request: Request, context: { params: Promise<{ resource: string; id: string }> }) {
+async function updateSetupItem(request: Request, context: { params: Promise<{ resource: string; id: string }> }) {
   const auth = await requireRole("admin");
   if (auth.response) return auth.response;
   const { resource, id } = await context.params;
@@ -126,7 +127,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ resou
   }
 }
 
-export async function DELETE(_request: Request, context: { params: Promise<{ resource: string; id: string }> }) {
+async function deleteSetupItem(_request: Request, context: { params: Promise<{ resource: string; id: string }> }) {
   const auth = await requireRole("admin");
   if (auth.response) return auth.response;
   const { resource, id } = await context.params;
@@ -194,4 +195,19 @@ export async function DELETE(_request: Request, context: { params: Promise<{ res
     console.error("Setup delete failed:", error);
     return Response.json({ error: "Could not delete the setup record." }, { status: 500 });
   }
+}
+
+export async function PATCH(request: Request, context: { params: Promise<{ resource: string; id: string }> }) {
+  const response = await updateSetupItem(request, context);
+  await auditSetupChange("update", (await context.params).resource, response);
+  return response;
+}
+
+export async function DELETE(request: Request, context: { params: Promise<{ resource: string; id: string }> }) {
+  const { resource, id } = await context.params;
+  // Read the name first; after deletion there is nothing left to describe.
+  const label = Types.ObjectId.isValid(id) ? await setupItemLabel(resource, id) : "";
+  const response = await deleteSetupItem(request, context);
+  await auditSetupChange("delete", resource, response, { id, label });
+  return response;
 }

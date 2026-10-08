@@ -1,4 +1,4 @@
-import { requireRole } from "@/backend/auth/auth";
+import { requireTeacher } from "@/backend/auth/scope";
 import { connectDB } from "@/backend/database/db";
 import { ClassSchedule, Program, Room, Section, Subject, Teacher, Term } from "@/backend/models";
 import { serializeSchedule } from "@/backend/services/schedule-service";
@@ -13,12 +13,11 @@ function serialize(document: Record<string, unknown>) {
 }
 
 export async function GET() {
-  const auth = await requireRole("teacher");
+  const auth = await requireTeacher();
   if (auth.response) return auth.response;
   try {
     await connectDB();
-    const teacherId = auth.user.teacherId;
-    if (!teacherId) return Response.json({ error: "This account is not linked to a teacher profile." }, { status: 403 });
+    const { teacherId } = auth;
     const [terms, rooms, teacher, schedules, bookingDocs] = await Promise.all([
       Term.find().sort({ startYear: -1, semester: -1 }).lean(),
       Room.find().sort({ name: 1, building: 1 }).lean(),

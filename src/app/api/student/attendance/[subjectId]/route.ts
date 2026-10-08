@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireRole } from "@/backend/auth/auth";
+import { requireStudent } from "@/backend/auth/scope";
 import { connectDB } from "@/backend/database/db";
 import { AttendanceRecord, AttendanceSession, Subject, Teacher } from "@/backend/models";
 import { findCurrentEnrollment } from "@/backend/services/student-enrollment";
@@ -12,14 +12,13 @@ const idSchema = z.string().regex(/^[a-f\d]{24}$/i);
  * late, absent (closed without a check-in), or open (still running, not yet scanned).
  */
 export async function GET(_request: Request, context: { params: Promise<{ subjectId: string }> }) {
-  const auth = await requireRole("student");
+  const auth = await requireStudent();
   if (auth.response) return auth.response;
   const { subjectId } = await context.params;
   if (!idSchema.safeParse(subjectId).success) return Response.json({ error: "Invalid subject." }, { status: 400 });
   try {
     await connectDB();
-    const studentId = auth.user.studentId;
-    if (!studentId) return Response.json({ error: "This account is not linked to a student profile." }, { status: 403 });
+    const { studentId } = auth;
     const current = await findCurrentEnrollment(studentId);
     if (!current) return Response.json({ error: "You are not enrolled in a section this term." }, { status: 404 });
     const { term, enrollment } = current;

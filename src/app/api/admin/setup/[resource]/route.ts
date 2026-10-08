@@ -6,6 +6,7 @@ import { requireRole } from "@/backend/auth/auth";
 import { AuthAccount } from "@/backend/models";
 import { hashPassword } from "@/backend/auth/auth";
 import { z } from "zod";
+import { auditSetupChange } from "@/backend/services/audit";
 
 function serialize(document: { toObject(): object }) {
   const fields = { ...(document.toObject() as Record<string, unknown>) };
@@ -21,7 +22,7 @@ function duplicateError(error: unknown) {
 
 const passwordSchema = z.string().min(12).max(200);
 
-export async function POST(request: Request, context: { params: Promise<{ resource: string }> }) {
+async function createSetupItem(request: Request, context: { params: Promise<{ resource: string }> }) {
   const auth = await requireRole("admin");
   if (auth.response) return auth.response;
   const { resource } = await context.params;
@@ -109,4 +110,10 @@ export async function POST(request: Request, context: { params: Promise<{ resour
     console.error("Setup create failed:", error);
     return Response.json({ error: "Could not save the setup record." }, { status: 500 });
   }
+}
+
+export async function POST(request: Request, context: { params: Promise<{ resource: string }> }) {
+  const response = await createSetupItem(request, context);
+  await auditSetupChange("create", (await context.params).resource, response);
+  return response;
 }

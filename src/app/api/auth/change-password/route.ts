@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { createSessionToken, getCurrentUser, hashPassword, setSessionCookie, verifyPassword } from "@/backend/auth/auth";
 import { AuthAccount } from "@/backend/models";
+import { clientIp, LIMITS, rateLimit } from "@/backend/services/rate-limit";
+import { audit } from "@/backend/services/audit";
 
 const changeSchema = z.object({
   currentPassword: z.string().min(1).max(200),
@@ -19,6 +21,8 @@ export async function POST(request: Request) {
   try {
     const user = await getCurrentUser();
     if (!user) return Response.json({ error: "Sign in to continue." }, { status: 401 });
+    const limited = await rateLimit(LIMITS.changePassword, user.id);
+    if (limited) return limited;
     const account = await AuthAccount.findById(user.id).select("+passwordHash");
     if (!account) return Response.json({ error: "Sign in to continue." }, { status: 401 });
     if (!(await verifyPassword(currentPassword, account.passwordHash))) {
@@ -30,6 +34,7 @@ export async function POST(request: Request) {
     account.passwordHash = await hashPassword(newPassword);
     account.authVersion += 1;
     await account.save();
+    await audit(user, "account", "password.change", `${user.name} changed their password`, { type: "account", id: user.id });
     const token = await createSessionToken(account);
     await setSessionCookie(token);
     return Response.json({ ok: true, token });

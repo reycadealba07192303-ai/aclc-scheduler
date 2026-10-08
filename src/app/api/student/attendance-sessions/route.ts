@@ -1,16 +1,15 @@
-import { requireRole } from "@/backend/auth/auth";
+import { requireStudent } from "@/backend/auth/scope";
 import { connectDB } from "@/backend/database/db";
 import { AttendanceRecord, AttendanceSession, Program, Section, Student, Subject, Teacher } from "@/backend/models";
 import { findCurrentEnrollment } from "@/backend/services/student-enrollment";
 import { issueStudentAttendanceToken, QR_TOKEN_SECONDS, tokenExpiry } from "@/backend/services/attendance-qr";
 
 export async function GET() {
-  const auth = await requireRole("student");
+  const auth = await requireStudent();
   if (auth.response) return auth.response;
   try {
     await connectDB();
-    const studentId = auth.user.studentId;
-    if (!studentId) return Response.json({ error: "This account is not linked to a student profile." }, { status: 403 });
+    const { studentId } = auth;
     const current = await findCurrentEnrollment(studentId);
     if (!current) return Response.json({ sessions: [] });
     const { term, enrollment } = current;
