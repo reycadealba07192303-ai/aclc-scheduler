@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createSessionToken, getCurrentUser, hashPassword, setSessionCookie, verifyPassword } from "@/backend/auth/auth";
 import { AuthAccount } from "@/backend/models";
-import { clientIp, LIMITS, rateLimit } from "@/backend/services/rate-limit";
+import { LIMITS, rateLimit } from "@/backend/services/rate-limit";
 import { audit } from "@/backend/services/audit";
 
 const changeSchema = z.object({

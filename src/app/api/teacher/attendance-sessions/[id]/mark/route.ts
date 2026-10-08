@@ -3,7 +3,7 @@ import { requireTeacher } from "@/backend/auth/scope";
 import { connectDB } from "@/backend/database/db";
 import { AttendanceRecord, AttendanceSession, Student, StudentEnrollment, Subject } from "@/backend/models";
 import { notify } from "@/backend/services/notifications";
-import { clientIp, LIMITS, rateLimit } from "@/backend/services/rate-limit";
+import { LIMITS, rateLimit } from "@/backend/services/rate-limit";
 import { audit } from "@/backend/services/audit";
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i);

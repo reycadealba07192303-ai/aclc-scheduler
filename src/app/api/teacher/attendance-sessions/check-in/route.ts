@@ -5,7 +5,7 @@ import { AttendanceRecord, AttendanceSession, ClassSchedule, Student, StudentEnr
 import { notify } from "@/backend/services/notifications";
 import { checkInStatus } from "@/backend/services/attendance-status";
 import { verifyStudentAttendanceToken } from "@/backend/services/attendance-qr";
-import { clientIp, LIMITS, rateLimit } from "@/backend/services/rate-limit";
+import { LIMITS, rateLimit } from "@/backend/services/rate-limit";
 
 const checkInSchema = z.object({ token: z.string().min(1).max(512) });
 
