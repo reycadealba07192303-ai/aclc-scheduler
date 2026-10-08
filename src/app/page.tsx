@@ -59,19 +59,39 @@ const faqs = [
 ];
 
 /**
- * Where the Android teacher app downloads from. In production, set
- * TEACHER_APP_URL to the GitHub Release file (TEACHER_APP_VERSION and
- * TEACHER_APP_SIZE label it). Locally, a file in public/downloads is used.
- * Null (no button) when neither exists.
+ * Where the Android teacher app downloads from, first match wins:
+ * 1. TEACHER_APP_URL (with TEACHER_APP_VERSION / TEACHER_APP_SIZE), if set;
+ * 2. a local file in public/downloads (development);
+ * 3. the latest GitHub Release of this repository, checked every 10 minutes,
+ *    so a new release shows up without redeploying.
+ * Null (no button) when none exists.
  */
 const LOCAL_APK = "/downloads/aclc-scheduler-teacher.apk";
-function teacherApp() {
+const RELEASE_API = "https://api.github.com/repos/reycadealba07192303-ai/aclc-scheduler/releases/latest";
+const RELEASE_ASSET = "aclc-scheduler-teacher.apk";
+type TeacherApp = { href: string; version: string | null; size: string | null };
+
+async function teacherApp(): Promise<TeacherApp | null> {
   if (process.env.TEACHER_APP_URL) {
     return { href: process.env.TEACHER_APP_URL, version: process.env.TEACHER_APP_VERSION ?? null, size: process.env.TEACHER_APP_SIZE ?? null };
   }
   try {
     const size = statSync(path.join(process.cwd(), "public", LOCAL_APK)).size;
     return { href: LOCAL_APK, version: null, size: `${Math.round(size / 1024 / 1024)} MB` };
+  } catch {
+    // No local file: fall through to the GitHub release.
+  }
+  try {
+    const response = await fetch(RELEASE_API, { headers: { Accept: "application/vnd.github+json" }, next: { revalidate: 600 } });
+    if (!response.ok) return null;
+    const release = (await response.json()) as { tag_name?: string; assets?: { name: string; size: number; browser_download_url: string }[] };
+    const asset = release.assets?.find((item) => item.name === RELEASE_ASSET);
+    if (!asset) return null;
+    return {
+      href: asset.browser_download_url,
+      version: release.tag_name?.match(/\d+\.\d+\.\d+/)?.[0] ?? null,
+      size: `${Math.round(asset.size / 1024 / 1024)} MB`,
+    };
   } catch {
     return null;
   }
@@ -97,8 +117,8 @@ function Logo({ size }: { size: number }) {
   </span>;
 }
 
-export default function LandingPage() {
-  const app = teacherApp();
+export default async function LandingPage() {
+  const app = await teacherApp();
   return <div className="min-h-screen bg-bg-elevated text-ink">
     {/* Navigation */}
     <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-[#070d1f]/80 text-white backdrop-blur-md">
