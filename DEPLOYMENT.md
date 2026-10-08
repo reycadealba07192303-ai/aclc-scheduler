@@ -78,12 +78,7 @@ Do this once Vercel has an HTTPS address, because the app is built for that addr
    The **Teacher app release** workflow builds and signs the APKs and publishes a GitHub Release with:
    - `aclc-scheduler-teacher.apk`: most phones, about 26 MB
    - `aclc-scheduler-teacher-older-phones.apk`: older 32-bit phones
-4. **Point the landing page at it:** in Vercel, add these, then redeploy:
-   - `TEACHER_APP_URL` = `https://github.com/<owner>/<repo>/releases/latest/download/aclc-scheduler-teacher.apk`
-   - `TEACHER_APP_VERSION` = `0.1.0`
-   - `TEACHER_APP_SIZE` = `26 MB`
-
-   The `latest` link always serves the newest release, so later releases only need the version and size updated.
+4. **The landing page picks it up by itself.** Its **Download for Android** button reads the latest GitHub Release of this repository every 10 minutes, including the version and file size, so there's nothing to set in Vercel. To point it somewhere else instead, set `TEACHER_APP_URL` (plus optional `TEACHER_APP_VERSION` and `TEACHER_APP_SIZE`) in Vercel.
 
 ## 5. Day-to-day
 
