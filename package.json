@@ -24,7 +24,7 @@
     "nodemailer": "^10.0.15",
     "pdfjs-dist": "^4.10.38",
     "qrcode.react": "^4.2.0",
-    "react": "19.2.8",
+    "react": "19.3.0",
     "react-dom": "19.2.8",
     "read-excel-file": "^9.3.10",
     "tailwind-merge": "^3.7.0",
