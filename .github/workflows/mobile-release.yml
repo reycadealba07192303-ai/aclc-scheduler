@@ -35,7 +35,7 @@ jobs:
           case "$API_BASE_URL" in https://*) ;; *) echo "::error::Set the API_BASE_URL variable to the production https:// address."; exit 1 ;; esac
           [ "$HAS_KEYSTORE" = "true" ] || { echo "::error::Add the ANDROID_KEYSTORE_* secrets (see the top of this file)."; exit 1; }
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
